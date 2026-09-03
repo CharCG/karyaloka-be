@@ -1,0 +1,285 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  FREELANCER
+  CLIENT
+}
+
+enum ProjectStatus {
+  OPEN
+  CLOSED
+  IN_PROGRESS
+  NEED_REVIEW
+  COMPLETED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  WITHDRAWN
+  REJECTED
+  HIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum EscrowStatus {
+  HOLDING
+  RELEASED
+  REFUNDED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum MessageReadStatus {
+  UNREAD
+  READ
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String
+  avatarUrl    String?
+  role         UserRole
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  freelancerProfile FreelancerProfile?
+  clientProfile     ClientProfile?
+
+  sentMessages        Message[]            @relation("SentMessages")
+  conversationsA      Conversation[]       @relation("ParticipantA")
+  conversationsB      Conversation[]       @relation("ParticipantB")
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String    @unique // hashed token, not raw
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model FreelancerProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description    String?
+  skills         String[]
+  rating         Decimal  @default(0) @db.Decimal(3, 2)
+  completedCount Int      @default(0)
+  totalEarning   Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  portfolioItems   PortfolioItem[]
+  applications     ProjectApplication[]
+  assignedProjects Project[]            @relation("AssignedFreelancer")
+  wallet           Wallet?
+
+  @@map("freelancer_profiles")
+}
+
+model ClientProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description    String?
+  completedCount Int      @default(0)
+  totalSpent     Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  projects Project[]
+
+  @@map("client_profiles")
+}
+
+model PortfolioItem {
+  id           String            @id @default(uuid())
+  freelancerId String
+  freelancer   FreelancerProfile @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+  imageUrl     String
+  description  String
+  externalUrl  String
+  createdAt    DateTime          @default(now())
+
+  @@map("portfolio_items")
+}
+
+model Project {
+  id       String        @id @default(uuid())
+  clientId String
+  client   ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String
+  skills      String[]
+  budget      Decimal  @db.Decimal(14, 2)
+  deadline    DateTime
+
+  status ProjectStatus @default(OPEN)
+
+  assignedFreelancerId String?
+  assignedFreelancer   FreelancerProfile? @relation("AssignedFreelancer", fields: [assignedFreelancerId], references: [id])
+
+  deliverableUrl String?
+  submittedAt    DateTime?
+  approvedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applications ProjectApplication[]
+  payment      Payment?
+
+  @@index([status])
+  @@index([clientId])
+  @@map("projects")
+}
+
+model ProjectApplication {
+  id           String            @id @default(uuid())
+  projectId    String
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  freelancerId String
+  freelancer   FreelancerProfile @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+
+  status    ApplicationStatus @default(APPLIED)
+  appliedAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([projectId, freelancerId])
+  @@index([freelancerId])
+  @@map("project_applications")
+}
+
+model Payment {
+  id        String  @id @default(uuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  budgetAmount Decimal @db.Decimal(14, 2)
+  serviceFee   Decimal @db.Decimal(14, 2)
+  totalAmount  Decimal @db.Decimal(14, 2)
+
+  status     PaymentStatus @default(PENDING)
+  gatewayRef String?
+  paidAt     DateTime?
+
+  escrow Escrow?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payments")
+}
+
+model Escrow {
+  id        String  @id @default(uuid())
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  amount     Decimal      @db.Decimal(14, 2)
+  status     EscrowStatus @default(HOLDING)
+  releasedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("escrows")
+}
+
+model Wallet {
+  id           String            @id @default(uuid())
+  freelancerId String            @unique
+  freelancer   FreelancerProfile @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+  balance      Decimal           @default(0) @db.Decimal(14, 2)
+
+  updatedAt DateTime @updatedAt
+
+  withdrawals Withdrawal[]
+
+  @@map("wallets")
+}
+
+model Withdrawal {
+  id       String @id @default(uuid())
+  walletId String
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  amount Decimal          @db.Decimal(14, 2)
+  status WithdrawalStatus @default(PENDING)
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@map("withdrawals")
+}
+
+model Conversation {
+  id String @id @default(uuid())
+
+  participantAId String
+  participantA   User   @relation("ParticipantA", fields: [participantAId], references: [id])
+  participantBId String
+  participantB   User   @relation("ParticipantB", fields: [participantBId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+
+  @@unique([participantAId, participantBId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation("SentMessages", fields: [senderId], references: [id])
+
+  content    String
+  readStatus MessageReadStatus @default(UNREAD)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])
+  @@map("messages")
+}
