@@ -26,14 +26,32 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const user = await this.prismaService.user.create({
-      data: {
-        name: dto.name,
-        email: dto.email,
-        passwordHash: hashedPassword,
-        phone: dto.phone,
-        role: dto.role,
-      },
+
+    const user = await this.prismaService.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          name: dto.name,
+          email: dto.email,
+          passwordHash: hashedPassword,
+          phone: dto.phone,
+          role: dto.role,
+        },
+      });
+
+      if (dto.role === 'FREELANCER') {
+        const profile = await tx.freelancerProfile.create({
+          data: { userId: createdUser.id },
+        });
+        await tx.wallet.create({
+          data: { freelancerId: profile.id },
+        });
+      } else {
+        await tx.clientProfile.create({
+          data: { userId: createdUser.id },
+        });
+      }
+
+      return createdUser;
     });
 
     return {
