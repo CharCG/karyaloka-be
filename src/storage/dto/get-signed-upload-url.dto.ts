@@ -10,7 +10,7 @@ export class GetSignedUploadUrlDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
-  @IsIn(['avatars', 'portfolios', 'deliverables'])
+  @IsIn(['avatars', 'portfolios', 'portfolio', 'deliverables'])
   folder: string;
 
   @ApiPropertyOptional()

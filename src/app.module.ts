@@ -10,7 +10,7 @@ import { ProjectModule } from './project/project.module.js';
 import { ApplicationModule } from './application/application.module.js';
 import { PaymentModule } from './payment/payment.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
-import { MessagingModule } from './conversation/conversation.module.js';
+import { ConversationModule } from './conversation/conversation.module.js';
 
 @Module({
   imports: [
@@ -44,7 +44,7 @@ import { MessagingModule } from './conversation/conversation.module.js';
     ApplicationModule,
     PaymentModule,
     WalletModule,
-    MessagingModule,
+    ConversationModule,
   ],
   controllers: [],
   providers: [],

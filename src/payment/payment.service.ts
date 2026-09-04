@@ -71,11 +71,35 @@ export class PaymentService {
       throw new BadRequestException('Freelancer has not applied or application is not in APPLIED status');
     }
 
-    const budgetAmount = Number(project.budget);
-    const serviceFee = Math.round(budgetAmount * 0.02 * 100) / 100; // 2% service fee
+    const budgetAmount = Math.round(Number(project.budget));
+    const serviceFee = Math.round(budgetAmount * 0.02);
     const totalAmount = budgetAmount + serviceFee;
 
-    const orderId = `KL-${dto.projectId}-${dto.freelancerId}-${Date.now()}`;
+    const shortProjectId = dto.projectId.replace(/-/g, '').slice(0, 12);
+    const shortFreelancerId = dto.freelancerId.replace(/-/g, '').slice(0, 12);
+    const timestamp = Date.now().toString().slice(-8);
+    const orderId = `KL_${shortProjectId}_${shortFreelancerId}_${timestamp}`;
+
+    await this.prisma.payment.upsert({
+      where: { projectId: dto.projectId },
+      create: {
+        projectId: dto.projectId,
+        budgetAmount,
+        serviceFee,
+        totalAmount,
+        status: 'PENDING',
+        gatewayRef: `${orderId}:${dto.projectId}:${dto.freelancerId}`,
+      },
+      update: {
+        budgetAmount,
+        serviceFee,
+        totalAmount,
+        status: 'PENDING',
+        gatewayRef: `${orderId}:${dto.projectId}:${dto.freelancerId}`,
+      },
+    });
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL')!;
 
     const parameter = {
       transaction_details: {
@@ -84,7 +108,7 @@ export class PaymentService {
       },
       item_details: [
         {
-          id: dto.projectId,
+          id: dto.projectId.slice(0, 30),
           price: budgetAmount,
           quantity: 1,
           name: project.title.substring(0, 50),
@@ -99,6 +123,10 @@ export class PaymentService {
       customer_details: {
         first_name: clientProfile.user.name,
         email: clientProfile.user.email,
+      },
+      callbacks: {
+        finish: `${frontendUrl}/client/projects/${dto.projectId}/payment/success`,
+        error: `${frontendUrl}/client/projects/${dto.projectId}/checkout/${dto.freelancerId}`,
       },
     };
 
@@ -118,8 +146,46 @@ export class PaymentService {
     }
   }
 
+  async verifyPayment(projectId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { projectId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    if (payment.status === 'PAID') {
+      return { status: 'PAID', paid: true };
+    }
+
+    if (!payment.gatewayRef) {
+      throw new BadRequestException('No payment order associated with this project');
+    }
+
+    const orderId = payment.gatewayRef.split(':')[0];
+
+    try {
+      const statusResponse = await (this.snap as any).transaction.status(orderId);
+      const transactionStatus = statusResponse.transaction_status;
+      const fraudStatus = statusResponse.fraud_status;
+
+      if (
+        (transactionStatus === 'capture' && fraudStatus === 'accept') ||
+        transactionStatus === 'settlement'
+      ) {
+        await this.processSuccessfulPayment(orderId, statusResponse.transaction_id);
+        return { status: 'PAID', paid: true, message: 'Payment confirmed successfully' };
+      }
+
+      return { status: payment.status, transactionStatus, paid: false };
+    } catch (error: any) {
+      this.logger.warn(`Failed to verify Midtrans status for order ${orderId}: ${error.message}`);
+      return { status: payment.status, paid: false };
+    }
+  }
+
   async handleWebhook(notification: any) {
-    // Verify signature
     const orderId = notification.order_id;
     const statusCode = notification.status_code;
     const grossAmount = notification.gross_amount;
@@ -139,10 +205,7 @@ export class PaymentService {
 
     this.logger.log(`Webhook received: orderId=${orderId}, status=${transactionStatus}, fraud=${fraudStatus}`);
 
-    if (
-      transactionStatus === 'capture' && fraudStatus === 'accept' ||
-      transactionStatus === 'settlement'
-    ) {
+    if ((transactionStatus === 'capture' && fraudStatus === 'accept') || transactionStatus === 'settlement') {
       await this.processSuccessfulPayment(orderId, notification.transaction_id);
     }
 
@@ -150,20 +213,25 @@ export class PaymentService {
   }
 
   private async processSuccessfulPayment(orderId: string, transactionId: string) {
-    const parts = orderId.split('-');
-    if (parts.length < 4 || parts[0] !== 'KL') {
-      this.logger.error(`Invalid orderId format: ${orderId}`);
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        gatewayRef: { startsWith: `${orderId}:` },
+      },
+    });
+
+    let projectId: string;
+    let freelancerId: string;
+
+    if (payment && payment.gatewayRef) {
+      const parts = payment.gatewayRef.split(':');
+      projectId = parts[1];
+      freelancerId = parts[2];
+    } else {
+      this.logger.error(`Cannot resolve payment for orderId: ${orderId}`);
       return;
     }
 
-    const projectId = parts[1];
-    const freelancerId = parts[2];
-
-    const existingPayment = await this.prisma.payment.findUnique({
-      where: { projectId },
-    });
-
-    if (existingPayment) {
+    if (payment.status === 'PAID') {
       this.logger.log(`Payment already processed for project ${projectId}`);
       return;
     }
@@ -195,27 +263,35 @@ export class PaymentService {
         throw new Error(`Application not found or not in APPLIED status`);
       }
 
-      const budgetAmount = Number(project.budget);
-      const serviceFee = Math.round(budgetAmount * 0.02 * 100) / 100;
+      const budgetAmount = Math.round(Number(project.budget));
+      const serviceFee = Math.round(budgetAmount * 0.02);
       const totalAmount = budgetAmount + serviceFee;
 
-      const payment = await tx.payment.create({
-        data: {
+      const updatedPayment = await tx.payment.upsert({
+        where: { projectId },
+        create: {
           projectId,
-          budgetAmount: project.budget,
+          budgetAmount,
           serviceFee,
           totalAmount,
           status: 'PAID',
-          gatewayRef: transactionId,
+          gatewayRef: transactionId || orderId,
+          paidAt: new Date(),
+        },
+        update: {
+          status: 'PAID',
+          gatewayRef: transactionId || orderId,
           paidAt: new Date(),
         },
       });
 
-      await tx.escrow.create({
-        data: {
-          paymentId: payment.id,
+      await tx.escrow.upsert({
+        where: { paymentId: updatedPayment.id },
+        create: {
+          paymentId: updatedPayment.id,
           amount: project.budget,
         },
+        update: {},
       });
 
       await tx.project.update({

@@ -11,6 +11,7 @@ export class StorageService {
   private folderConfig: Record<string, { bucket: string; public: boolean }> = {
     avatars: { bucket: 'public-assets', public: true },
     portfolios: { bucket: 'public-assets', public: true },
+    portfolio: { bucket: 'public-assets', public: true },
     deliverables: { bucket: 'private-files', public: false },
   };
 
@@ -34,17 +35,18 @@ export class StorageService {
   async getSignedUploadUrl(params: { userId: string; fileName: string; folder: string; projectId?: string }) {
     const { userId, fileName, folder, projectId } = params;
     const config = this.getConfig(folder);
+    const normalizedFolder = folder === 'portfolio' ? 'portfolios' : folder;
 
-    if (folder === 'deliverables' && !projectId) {
+    if (normalizedFolder === 'deliverables' && !projectId) {
       throw new BadRequestException('projectId is required for deliverables folder.');
     }
 
     const fileExtension = extname(fileName);
     const generatedFileName = `${v4()}${fileExtension}`;
     const path =
-      folder === 'deliverables'
-        ? `${folder}/${projectId}/${userId}-${generatedFileName}`
-        : `${folder}/${userId}/${generatedFileName}`;
+      normalizedFolder === 'deliverables'
+        ? `${normalizedFolder}/${projectId}/${userId}-${generatedFileName}`
+        : `${normalizedFolder}/${userId}/${generatedFileName}`;
 
     const { data, error } = await this.supabaseClient.storage.from(config.bucket).createSignedUploadUrl(path);
 

@@ -5,7 +5,7 @@ export class GetPublicReadUrlDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
-  @IsIn(['avatars', 'portfolios'])
+  @IsIn(['avatars', 'portfolios', 'portfolio'])
   folder: string;
 
   @ApiProperty()

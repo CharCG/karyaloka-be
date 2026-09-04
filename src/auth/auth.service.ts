@@ -7,6 +7,7 @@ import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { UserRole } from '../generated/prisma/enums.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 
@@ -38,7 +39,7 @@ export class AuthService {
         },
       });
 
-      if (dto.role === 'FREELANCER') {
+      if (dto.role === UserRole.FREELANCER) {
         const profile = await tx.freelancerProfile.create({
           data: { userId: createdUser.id },
         });
@@ -104,7 +105,7 @@ export class AuthService {
       data: {
         userId: user.id,
         token: hashedToken,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minute(s)
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
       },
     });
 

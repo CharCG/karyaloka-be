@@ -31,12 +31,16 @@ export class PortfolioService {
   async create(userId: string, dto: CreatePortfolioItemDto) {
     const freelancerId = await this.getFreelancerProfileId(userId);
 
+    const imageUrl = dto.imageUrl || '';
+    const description = dto.description || dto.title || '';
+    const externalUrl = dto.externalUrl || dto.projectUrl || '';
+
     return this.prisma.portfolioItem.create({
       data: {
         freelancerId,
-        imageUrl: dto.imageUrl,
-        description: dto.description,
-        externalUrl: dto.externalUrl,
+        imageUrl,
+        description,
+        externalUrl,
       },
     });
   }

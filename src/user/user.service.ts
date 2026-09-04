@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CurrentUserDto } from '../common/dto/current-user.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { UserRole } from '../generated/prisma/enums.js';
 
 @Injectable()
 export class UserService {
@@ -25,13 +26,14 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const { passwordHash, ...result } = user;
+    const { passwordHash: _passwordHash, ...result } = user;
     return result;
   }
 
   async updateProfile(currentUser: CurrentUserDto, dto: UpdateProfileDto) {
     const userUpdate: Record<string, any> = {};
     if (dto.name !== undefined) userUpdate.name = dto.name;
+    if (dto.phone !== undefined) userUpdate.phone = dto.phone;
     if (dto.avatarUrl !== undefined) userUpdate.avatarUrl = dto.avatarUrl;
 
     if (Object.keys(userUpdate).length > 0) {
@@ -41,7 +43,7 @@ export class UserService {
       });
     }
 
-    if (currentUser.role === 'FREELANCER') {
+    if (currentUser.role === UserRole.FREELANCER) {
       const profileUpdate: Record<string, any> = {};
       if (dto.description !== undefined) profileUpdate.description = dto.description;
       if (dto.skills !== undefined) profileUpdate.skills = dto.skills;
@@ -52,7 +54,7 @@ export class UserService {
           data: profileUpdate,
         });
       }
-    } else if (currentUser.role === 'CLIENT') {
+    } else if (currentUser.role === UserRole.CLIENT) {
       if (dto.description !== undefined) {
         await this.prisma.clientProfile.update({
           where: { userId: currentUser.id },
@@ -82,7 +84,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const { passwordHash, ...result } = user;
+    const { passwordHash: _passwordHash, ...result } = user;
     return result;
   }
 }

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CurrentUserDto } from '../common/dto/current-user.dto.js';
+import { UserRole } from '../generated/prisma/enums.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { SubmitDeliverableDto } from './dto/submit-deliverable.dto.js';
 import { ApproveCompletionDto } from './dto/approve-completion.dto.js';
@@ -176,7 +177,7 @@ export class ProjectService {
       throw new NotFoundException('Project not found');
     }
 
-    if (currentUser.role === 'FREELANCER') {
+    if (currentUser.role === UserRole.FREELANCER) {
       const freelancerProfile = await this.prisma.freelancerProfile.findUnique({
         where: { userId: currentUser.id },
         select: { id: true },
@@ -401,6 +402,9 @@ export class ProjectService {
         include: {
           assignedFreelancer: {
             include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+          },
+          _count: {
+            select: { applications: { where: { status: 'APPLIED' } } },
           },
         },
         orderBy: { createdAt: 'desc' },
