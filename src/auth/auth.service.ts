@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MailerService } from '@nestjs-modules/mailer';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -143,5 +143,27 @@ export class AuthService {
     ]);
 
     return { message: 'Password has been reset successfully.' };
+  }
+
+  async getMe(userId: string) {
+    const user = await this.prismaService.user.findUnique({
+      where: { id: userId },
+      include: {
+        freelancerProfile: {
+          include: {
+            portfolioItems: { orderBy: { createdAt: 'desc' } },
+            wallet: true,
+          },
+        },
+        clientProfile: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const { passwordHash: _passwordHash, ...result } = user;
+    return result;
   }
 }
