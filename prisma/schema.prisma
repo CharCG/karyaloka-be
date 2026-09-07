@@ -78,7 +78,7 @@ model PasswordResetToken {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  token     String    @unique // hashed token, not raw
+  token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
 
